@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
 using CornerStore.Models.DTO;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -257,6 +258,42 @@ app.MapPost("/api/orders", (CornerStoreDbContext db, Order order) =>
     db.SaveChanges();
     return Results.Created($"/api/orders/{order.Id}", order);
 });
+
+
+//Get Most Popular Products
+app.MapGet("/api/products/popular", (CornerStoreDbContext db, int? amount) =>
+{
+    var popularProducts = db.OrderProducts
+    .Include(op => op.Product)
+    .ThenInclude(p=> p.Category)
+    //OrderProducts are grouped by ProductID
+    .GroupBy(op => op.ProductId)
+    //A new variable is now created for each product group with a sum of the total sold quantity
+    .Select(g => new
+    {
+        product = g.First().Product,
+        totalSold = g.Sum(op => op.Quantity)
+    })
+    .OrderByDescending(p => p.totalSold)
+    .Take(amount ?? 5)
+    .ToList();
+
+    return popularProducts.Select(pp => new ProductDTO
+    {
+        Id = pp.product.Id,
+        ProductName = pp.product.ProductName,
+        Price = pp.product.Price,
+        Brand = pp.product.Brand,
+        CategoryId = pp.product.CategoryId,
+        Category = new CategoryDTO
+        {
+            Id=pp.product.Category.Id,
+            CategoryName=pp.product.Category.CategoryName
+        }
+    });
+});
+
+
 
 app.Run();
 
